@@ -12,8 +12,9 @@
 
 #include <string.h>
 #include <sys/ioctl.h>
+#include <ctype.h>
 
-#define CTRL_Q 0x11
+#define CTRL_KEY(k) ((k) & 0x1f)
 #define BACKSPACE 0x7f
 
 typedef struct {
@@ -24,10 +25,11 @@ typedef struct {
 
 typedef struct {
     int cx, cy;
-    int rowoff;
-    int coloff;
+    int width, height;
+    int start_row, start_col;
     int numrows;
     erow *rows;
+    char *filename;
 } EditorConfig;
 
 typedef struct{
@@ -41,5 +43,7 @@ static bool running = true;
 
 void erow_print(erow *row, int index);
 void editor_config_print(EditorConfig *E);
+void editor_free(EditorConfig *E);
+void editor_save(EditorConfig *E, char *filename);
 
 #endif // !SHARED

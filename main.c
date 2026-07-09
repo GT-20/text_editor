@@ -1,21 +1,9 @@
 #include "shared.h"
 #include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
 
-void row_insert_char(erow *row, int at, char c) {
-    if (at < 0 || at > row->size) return;
-
-    if (row->size + 2 > row->capacity) {
-        row->capacity *= 2;
-        row->chars = realloc(row->chars, row->capacity);
-    }
-
-    memmove(&row->chars[at + 1],
-            &row->chars[at],
-            row->size - at + 1);   // includes '\0'
-
-    row->chars[at] = c;
-    row->size++;
-}
+void move_cursor(EditorConfig *E);
 
 void delete_row(EditorConfig *E, int at) {
     if (at < 0 || at >= E->numrows) return;
@@ -26,6 +14,7 @@ void delete_row(EditorConfig *E, int at) {
 
     if (E->numrows == 0) {
         E->rows = realloc(E->rows, 0);
+        perror("Number of rows reached 0, not possible, thus bug in program.");
         return;
     }
 
@@ -34,40 +23,82 @@ void delete_row(EditorConfig *E, int at) {
 }
 
 void delete_empty_rows(EditorConfig *E){
-    if(E->rows[E->numrows-1].chars[0] == '\0'){
-        for (int i = E->numrows - 1; E->rows[i].chars[0] == '\0'; i--){
-            if (E->rows[i].size == 0) {
-                delete_row(E, E->numrows - 1);
-            }
-        }
+    // delete all the empty rows starting from the end of the file
+    while (E->numrows > 1 && E->rows[E->numrows - 1].size == 0) {
+        delete_row(E, E->numrows - 1);
     }
 }
 
-void refresh_screen(EditorConfig *E) {
-    write(STDOUT_FILENO, "\x1b[2J\x1b[H", 7);   // clear + home
-    for (int i = 0; i < E->numrows; i++) {
-        write(STDOUT_FILENO, E->rows[i].chars, E->rows[i].size);
+void editor_scroll(EditorConfig *E) {
+    int draw_height = E->height - 2; // drawable area
+    int draw_width = E->width;
+
+    if (E->cy < E->start_row) {
+        E->start_row = E->cy;
+    }
+    if (E->cy >= E->start_row + draw_height) {
+        E->start_row = E->cy - draw_height + 1;
+    }
+
+    if (E->cx < E->start_col) {
+        E->start_col = E->cx;
+    }
+    if (E->cx >= E->start_col + draw_width) {
+        E->start_col = E->cx - draw_width + 1;
+    }
+}
+
+void redraw_screen(EditorConfig *E) {
+    editor_scroll(E);
+
+    write(STDOUT_FILENO, "\x1b[?25l", 6);
+    write(STDOUT_FILENO, "\x1b[H", 3);
+
+    int draw_height = E->height - 2;
+
+    for (int i = 0; i < draw_height; i++) {
+        int file_idx = i + E->start_row;
+        write(STDOUT_FILENO, "\x1b[K", 3);
+
+        if (file_idx < E->numrows) {
+            int len = E->rows[file_idx].size;
+            
+            // Calculate how much of this row is visible
+            if (len > E->start_col) {
+                int visible_len = len - E->start_col;
+                
+                // Clamp visible length to the screen width
+                if (visible_len > E->width) visible_len = E->width;
+                
+                // Write starting from the start_col offset
+                write(STDOUT_FILENO, &E->rows[file_idx].chars[E->start_col], visible_len);
+            }
+        } 
         write(STDOUT_FILENO, "\r\n", 2);
     }
-    // put cursor back where it belongs
-    char buf[32];
-    int len = snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E->cy + 1, E->cx + 1);
-    write(STDOUT_FILENO, buf, len);
+    
+    move_cursor(E);
+    write(STDOUT_FILENO, "\x1b[?25h", 6);
+    fflush(stdout);
 }
 
 void move_cursor(EditorConfig *E) {
     char buf[32];
-    int len = snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E->cy+1, E->cx+1);
+    // screen_y = Logical Row - Scroll Offset + 1 (for 1-indexing)
+    int screen_y = (E->cy - E->start_row) + 1;
+    int screen_x = (E->cx - E->start_col) + 1;
+
+    int len = snprintf(buf, sizeof(buf), "\x1b[%d;%dH", screen_y, screen_x);
     write(STDOUT_FILENO, buf, len);
 }
 
 void add_row(EditorConfig *E) {
-    erow *temp = realloc(E->rows, sizeof(erow) * (E->numrows + 1));
-    if (temp == NULL) {
+    erow *tmp = realloc(E->rows, sizeof(erow) * (E->numrows + 1));
+    if (tmp == NULL) {
         fprintf(stderr, "Failed to allocate additional memory for new line.\n");
         exit(1);
     }
-    E->rows = temp;
+    E->rows = tmp;
 
     erow *new_row = &E->rows[E->numrows]; 
     new_row->size = 0;
@@ -81,12 +112,12 @@ void add_row(EditorConfig *E) {
     
     new_row->chars[0] = '\0';
 
-    putchar('\n');
-    putchar('\r');
+    write(STDOUT_FILENO, "\n\r", 2);
 
     E->numrows++;
     E->cy++;
     E->cx = 0;
+    fflush(stdout);
 }
 
 void insert_row(EditorConfig *E, int at, const char *s, size_t len) {
@@ -112,17 +143,19 @@ void break_into_newline(EditorConfig *E){
     memcpy(right, &current_row->chars[E->cx], right_len);
     right[right_len] = '\0';
 
-    current_row->chars[E->cx] = '\0';
-    current_row->size = E->cx;
+    current_row->chars[E->cx] = '\0'; current_row->size = E->cx;
 
     insert_row(E, E->cy + 1, right, right_len);
     free(right);
 
     E->cy++;
     E->cx = 0;
+    fflush(stdout);
 }
 
 int main(int argc, char **argv){
+    struct winsize ws;
+
     enableRawMode();
     clear_screen();
 
@@ -134,14 +167,34 @@ int main(int argc, char **argv){
     E.rows[0].size = 0;
     E.rows[0].chars = calloc(1, E.rows[0].capacity);
     E.rows[0].chars[0] = '\0';
+    E.start_row = 0;
+    E.start_col = 0;
+
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws);
+    E.width = ws.ws_col;
+    E.height = ws.ws_row;
+
+    if (argc > 1) {
+        E.filename = strdup(argv[1]);
+    } else {
+        E.filename = NULL;
+    }
+
+    redraw_screen(&E);
 
     char c = '\0';
     while (running) {
         if (read(STDIN_FILENO, &c, 1) == 1) {
-            if (c == CTRL_Q){
+            if (c == CTRL_KEY('q')){
                 delete_empty_rows(&E);
                 running = false;
             }
+            else if (c == CTRL_KEY('s')){
+                delete_empty_rows(&E);
+                editor_save(&E, "test.txt");
+                fflush(stdout);
+            }
+
             else if (c == '\r' || c == '\n'){
                 if (E.cx == E.rows[E.cy].size) {
                     add_row(&E);
@@ -149,7 +202,7 @@ int main(int argc, char **argv){
                 else {
                     break_into_newline(&E);
                 }
-                refresh_screen(&E);
+                redraw_screen(&E);
             }
 
             else if (c == '\x1b') {
@@ -165,8 +218,7 @@ int main(int argc, char **argv){
                                     if (E.cx > 0 && E.cx < current_row->size && current_row->size > 0) {
                                         memmove(&current_row->chars[E.cx], &current_row->chars[E.cx + 1], current_row->size - E.cx + 1);
                                         current_row->size--;
-                                        move_cursor(&E);
-                                        refresh_screen(&E);
+                                        redraw_screen(&E);
                                     }
                                 }
                             }
@@ -176,29 +228,27 @@ int main(int argc, char **argv){
                             case 'A': // UP
                                 if (E.cy > 0) {
                                     E.cy--; 
-                                    if(E.rows[E.cy].size < E.rows[E.cy + 1].size) E.cx = E.rows[E.cy].size;
+                                    if (E.cx > E.rows[E.cy].size) E.cx = E.rows[E.cy].size;
                                 }
                                 break;
-
                             case 'B': // DOWN
                                 if (E.cy < E.numrows - 1) {
                                     E.cy++;
-                                    if(E.rows[E.cy].size < E.rows[E.cy - 1].size) E.cx = E.rows[E.cy].size;
+                                    if (E.cx > E.rows[E.cy].size) E.cx = E.rows[E.cy].size;
                                 }
                                 break;
 
                             case 'C': // RIGHT
-                                if (E.cx < E.rows[E.cy].size) { E.cx++; }
+                                if (E.cx < E.rows[E.cy].size) E.cx++;
                                 break;
 
                             case 'D': // LEFT
-                                if (E.cx > 0) { E.cx--; }
+                                if (E.cx > 0) E.cx--;
                                 break;
-
                         }
+                        redraw_screen(&E);
                     }
                 }
-                move_cursor(&E);
             }
 
             else if (c == BACKSPACE || c== '\b'){
@@ -208,8 +258,7 @@ int main(int argc, char **argv){
                     memmove(&current_row->chars[E.cx - 1], &current_row->chars[E.cx], current_row->size - E.cx + 1);
                     current_row->size--;
                     E.cx--;
-                    move_cursor(&E);
-                    refresh_screen(&E);
+                    redraw_screen(&E);
                 }
             }
 
@@ -227,13 +276,15 @@ int main(int argc, char **argv){
                     E.cx++;
                     current_row->size++;
                     current_row->chars[current_row->size] = '\0';
-                    refresh_screen(&E);
+                    redraw_screen(&E);
+                    move_cursor(&E);
                 }
             }
         }
     }
     clear_screen();
     editor_config_print(&E);
+
+    editor_free(&E);
     return 0;
-    //TODO: free the allocated memory
 }
