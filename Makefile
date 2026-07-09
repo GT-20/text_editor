@@ -3,7 +3,7 @@ CC = clang
 # LDFLAGS = -lncurses -ltinfo
 
 TARGET = a
-SRC = main.c ./term/core.c debug.c
+SRC = main.c ./term/core.c input.c debug.c
 
 all: $(TARGET)
 

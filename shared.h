@@ -39,11 +39,17 @@ typedef struct{
     size_t gap_end;
 } GapBuffer;
 
-static bool running = true;
-
 void erow_print(erow *row, int index);
 void editor_config_print(EditorConfig *E);
 void editor_free(EditorConfig *E);
 void editor_save(EditorConfig *E, char *filename);
+
+void input(EditorConfig *E, char *c, bool *running);
+
+void delete_empty_rows(EditorConfig *E);
+void add_row(EditorConfig *E);
+void break_into_newline(EditorConfig *E);
+void redraw_screen(EditorConfig *E);
+void move_cursor(EditorConfig *E);
 
 #endif // !SHARED

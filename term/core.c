@@ -1,6 +1,5 @@
 #include "core.h"
 #include "../shared.h"
-// #include <ctype.h>
 #include <stdlib.h>
 #include <termios.h>
 #include <unistd.h>
