@@ -30,6 +30,7 @@ typedef struct {
     int numrows;
     erow *rows;
     char *filename;
+    bool unsaved;
 } EditorConfig;
 
 typedef struct{
@@ -39,12 +40,15 @@ typedef struct{
     size_t gap_end;
 } GapBuffer;
 
-void erow_print(erow *row, int index);
-void editor_config_print(EditorConfig *E);
+#ifdef DEBUG_EXISTS
+    void editor_config_print(EditorConfig *E);
+#endif
+
 void editor_free(EditorConfig *E);
-void editor_save(EditorConfig *E, char *filename);
+void editor_save(EditorConfig *E, char *c);
 
 void input(EditorConfig *E, char *c, bool *running);
+char *editor_prompt(EditorConfig *E, char *prompt, char *c);
 
 void delete_empty_rows(EditorConfig *E);
 void add_row(EditorConfig *E);

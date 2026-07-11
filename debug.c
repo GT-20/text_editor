@@ -1,5 +1,4 @@
 #include "shared.h"
-#include <stdio.h>
 
 void erow_print(erow *row, int index) {
     fprintf(stderr, "Row %d: size=%d, text=\"%s\"\r\n", 

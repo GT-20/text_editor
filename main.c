@@ -1,4 +1,5 @@
 #include "shared.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -126,13 +127,16 @@ void insert_row(EditorConfig *E, int at, const char *s, size_t len) {
     if (at < 0 || at > E->numrows) return;
 
     E->rows = realloc(E->rows, sizeof(erow) * (E->numrows + 1));
-    memmove(&E->rows[at + 1], &E->rows[at], sizeof(erow) * (E->numrows - at));
 
+    if (at < E->numrows) {
+        memmove(&E->rows[at + 1], &E->rows[at], sizeof(erow) * (E->numrows - at));
+    }
+
+    E->rows[at].size = len;
+    E->rows[at].capacity = len + 1;
     E->rows[at].chars = malloc(len + 1);
     memcpy(E->rows[at].chars, s, len);
     E->rows[at].chars[len] = '\0';
-    E->rows[at].size = len;
-    E->rows[at].capacity = len + 1;
 
     E->numrows++;
 }
@@ -153,6 +157,37 @@ void break_into_newline(EditorConfig *E){
     E->cy++;
     E->cx = 0;
     fflush(stdout);
+}
+
+void editor_open(EditorConfig *E, char *filename) {
+    free(E->filename);
+    E->filename = strdup(filename);
+
+    FILE *fp = fopen(filename, "r");
+    if (!fp) {
+        return;
+    }
+
+    char *line = NULL;
+    size_t linecap = 0;
+    ssize_t linelen;
+
+    if (E->numrows == 1 && E->rows[0].size == 0) {
+        free(E->rows[0].chars);
+        E->numrows = 0;
+    }
+
+    while ((linelen = getline(&line, &linecap, fp)) != -1) {
+        while (linelen > 0 && (line[linelen - 1] == '\n' || 
+                               line[linelen - 1] == '\r')) {
+            linelen--;
+        }
+        
+        insert_row(E, E->numrows, line, linelen);
+    }
+
+    free(line);
+    fclose(fp);
 }
 
 int main(int argc, char **argv){
@@ -176,10 +211,8 @@ int main(int argc, char **argv){
     E.width = ws.ws_col;
     E.height = ws.ws_row;
 
-    if (argc > 1) {
-        E.filename = strdup(argv[1]);
-    } else {
-        E.filename = NULL;
+    if (argc >= 2) {
+        editor_open(&E, argv[1]);
     }
 
     redraw_screen(&E);
@@ -190,9 +223,13 @@ int main(int argc, char **argv){
             input(&E, &c, &running);
         }
     }
+
     clear_screen();
-    editor_config_print(&E);
+    #ifdef DEBUG_EXISTS
+        editor_config_print(&E);
+    #endif
 
     editor_free(&E);
+    printf("%s", E.filename);
     return 0;
 }

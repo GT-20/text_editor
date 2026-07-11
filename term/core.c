@@ -41,6 +41,7 @@ void editor_free(EditorConfig *E) {
         }
     }
 
+    if (E->filename) free(E->filename);
     free(E->rows);
     E->rows = NULL;
     E->numrows = 0;
@@ -67,31 +68,45 @@ char *editor_rows_to_string(EditorConfig *E, int *buflen) {
         p++;
     }
 
-    return buf; //TODO: free this when calling
+    return buf;
 }
 
-void editor_save(EditorConfig *E, char *filename) {
-    if (filename == NULL) {
-        //TODO: prompt the user for filename here
-        return;
+void editor_save(EditorConfig *E, char *c) {
+    if (E->filename == NULL) {
+        E->filename = editor_prompt(E, "Save as: ", c);
+        if (E->filename == NULL) {
+            // User pressed ESC
+            return;
+        }
     }
 
     int len;
     char *buf = editor_rows_to_string(E, &len);
 
-    // writing to the file that doesnt exist
-    FILE *fp = fopen(filename, "w");
+    // Create a path for the temporary file
+    char tmp_name[256];
+    snprintf(tmp_name, sizeof(tmp_name), "%s.tmp", E->filename);
+
+    FILE *fp = fopen(tmp_name, "w");
     if (fp != NULL) {
         if (fwrite(buf, 1, len, fp) == len) {
             fclose(fp);
+            // Move tmp file to original filename
+            rename(tmp_name, E->filename);
             free(buf);
-            //TODO: add logic to show "saved" here
+            
+            // Optional: Print a status message
+            printf("\x1b[%d;1H\x1b[K%d bytes written to disk", E->height, len);
+            fflush(stdout);
+            sleep(1); 
             return;
         }
         fclose(fp);
     }
 
-    // if we reach here, something went wrong
     free(buf);
-    fprintf(stderr, "Error: Could not save to file %s\n", filename);
+    // Error handling
+    printf("\x1b[%d;1H\x1b[KSave failed! I/O Error.", E->height);
+    fflush(stdout);
+    sleep(2);
 }
