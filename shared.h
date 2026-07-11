@@ -1,7 +1,5 @@
 #ifndef SHARED
 
-#include "term/core.h"
-
 #include <stddef.h>
 #include <stdio.h>
 #include <stdbool.h>
@@ -44,11 +42,15 @@ typedef struct{
     void editor_config_print(EditorConfig *E);
 #endif
 
+void enableRawMode();
+void disableRawMode();
+void clear_screen(void);
 void editor_free(EditorConfig *E);
-void editor_save(EditorConfig *E, char *c);
+void editor_save(EditorConfig *E, int *c);
+char editorReadKey();
 
-void input(EditorConfig *E, char *c, bool *running);
-char *editor_prompt(EditorConfig *E, char *prompt, char *c);
+void input(EditorConfig *E, int *c, bool *running);
+char *editor_prompt(EditorConfig *E, char *prompt);
 
 void delete_empty_rows(EditorConfig *E);
 void add_row(EditorConfig *E);

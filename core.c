@@ -1,5 +1,4 @@
-#include "core.h"
-#include "../shared.h"
+#include "shared.h"
 #include <stdlib.h>
 #include <termios.h>
 #include <unistd.h>
@@ -30,6 +29,42 @@ void enableRawMode() {
 
 void clear_screen(void) {
     write(STDOUT_FILENO, "\x1b[2J\x1b[H", 7);
+}
+
+char editorReadKey() {
+    int nread;
+    char c;
+    // Read one byte from stdin
+    while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
+        if (nread == -1) exit(1);
+    }
+
+    // Handle Escape Sequences (Arrows, Delete, etc.)
+    if (c == '\x1b') {
+        char seq[3];
+        if (read(STDIN_FILENO, &seq[0], 1) != 1) return '\x1b';
+        if (read(STDIN_FILENO, &seq[1], 1) != 1) return '\x1b';
+
+        if (seq[0] == '[') {
+            if (seq[1] >= '0' && seq[1] <= '9') {
+                if (read(STDIN_FILENO, &seq[2], 1) != 1) return '\x1b';
+                if (seq[2] == '~') {
+                    switch (seq[1]) {
+                        case '3': return 1004; // Custom code for DELETE
+                    }
+                }
+            } else {
+                switch (seq[1]) {
+                    case 'A': return 1000; // UP
+                    case 'B': return 1001; // DOWN
+                    case 'C': return 1002; // RIGHT
+                    case 'D': return 1003; // LEFT
+                }
+            }
+        }
+        return '\x1b';
+    }
+    return c;
 }
 
 void editor_free(EditorConfig *E) {
@@ -71,9 +106,9 @@ char *editor_rows_to_string(EditorConfig *E, int *buflen) {
     return buf;
 }
 
-void editor_save(EditorConfig *E, char *c) {
+void editor_save(EditorConfig *E, int *c) {
     if (E->filename == NULL) {
-        E->filename = editor_prompt(E, "Save as: ", c);
+        E->filename = editor_prompt(E, "Save as: ");
         if (E->filename == NULL) {
             // User pressed ESC
             return;

@@ -1,6 +1,6 @@
 #include "shared.h"
 
-void input(EditorConfig *E, char *c, bool *running){
+void input(EditorConfig *E, int *c, bool *running){
     if (*c == CTRL_KEY('q')){
         //NOTE:
         // delete_empty_rows(E);
@@ -112,28 +112,27 @@ void input(EditorConfig *E, char *c, bool *running){
 }
 
 
-char *editor_prompt(EditorConfig *E, char *prompt, char *c) {
+char *editor_prompt(EditorConfig *E, char *prompt) {
     size_t bufsize = 128;
     char *buf = malloc(bufsize);
     size_t buflen = 0;
     buf[0] = '\0';
 
     while (1) {
-        // Render the prompt at the very bottom line
-        // Move to last line (E->height), clear it, and print
+        // Use the very bottom line for the prompt
         printf("\x1b[%d;1H\x1b[K%s%s", E->height, prompt, buf);
         fflush(stdout);
 
-        int ch = *c;
+        int ch = editorReadKey(); // Call the new read function!
 
         if (ch == BACKSPACE || ch == 0x7f || ch == CTRL_KEY('h')) {
             if (buflen != 0) buf[--buflen] = '\0';
-        } else if (ch == '\x1b') { // Escape to cancel
+        } else if (ch == '\x1b') { // ESC to cancel
             free(buf);
             return NULL;
-        } else if (ch == '\r') { // Enter to confirm
+        } else if (ch == '\r') { // ENTER to confirm
             if (buflen != 0) return buf;
-        } else if (!iscntrl(ch) && ch < 128) {
+        } else if (isprint(ch) && ch < 128) {
             if (buflen + 1 >= bufsize) {
                 bufsize *= 2;
                 buf = realloc(buf, bufsize);

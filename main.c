@@ -66,14 +66,9 @@ void redraw_screen(EditorConfig *E) {
         if (file_idx < E->numrows) {
             int len = E->rows[file_idx].size;
             
-            // Calculate how much of this row is visible
             if (len > E->start_col) {
                 int visible_len = len - E->start_col;
-                
-                // Clamp visible length to the screen width
                 if (visible_len > E->width) visible_len = E->width;
-                
-                // Write starting from the start_col offset
                 write(STDOUT_FILENO, &E->rows[file_idx].chars[E->start_col], visible_len);
             }
         } 
@@ -217,11 +212,11 @@ int main(int argc, char **argv){
 
     redraw_screen(&E);
 
-    char c = '\0';
+    int c = '\0';
     while (running) {
-        if (read(STDIN_FILENO, &c, 1) == 1) {
-            input(&E, &c, &running);
-        }
+        redraw_screen(&E); // Redraw at the start of every loop
+        int c = editorReadKey();
+        input(&E, &c, &running);
     }
 
     clear_screen();
@@ -230,6 +225,5 @@ int main(int argc, char **argv){
     #endif
 
     editor_free(&E);
-    printf("%s", E.filename);
     return 0;
 }
