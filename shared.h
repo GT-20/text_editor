@@ -31,12 +31,13 @@ typedef struct {
     bool unsaved;
 } EditorConfig;
 
-typedef struct{
-    char *buffer;
-    size_t size;
-    size_t gap_start;
-    size_t gap_end;
-} GapBuffer;
+enum editorKey {
+    ARROW_LEFT = 1000,
+    ARROW_RIGHT,
+    ARROW_UP,
+    ARROW_DOWN,
+    DEL_KEY
+};
 
 #ifdef DEBUG_EXISTS
     void editor_config_print(EditorConfig *E);
@@ -47,12 +48,13 @@ void disableRawMode();
 void clear_screen(void);
 void editor_free(EditorConfig *E);
 void editor_save(EditorConfig *E, int *c);
-char editorReadKey();
+int editorReadKey();
 
 void input(EditorConfig *E, int *c, bool *running);
 char *editor_prompt(EditorConfig *E, char *prompt);
 
 void delete_empty_rows(EditorConfig *E);
+void delete_row(EditorConfig *E, int at);
 void add_row(EditorConfig *E);
 void break_into_newline(EditorConfig *E);
 void redraw_screen(EditorConfig *E);

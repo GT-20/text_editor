@@ -31,15 +31,13 @@ void clear_screen(void) {
     write(STDOUT_FILENO, "\x1b[2J\x1b[H", 7);
 }
 
-char editorReadKey() {
+int editorReadKey() {
     int nread;
     char c;
-    // Read one byte from stdin
     while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
         if (nread == -1) exit(1);
     }
 
-    // Handle Escape Sequences (Arrows, Delete, etc.)
     if (c == '\x1b') {
         char seq[3];
         if (read(STDIN_FILENO, &seq[0], 1) != 1) return '\x1b';
@@ -49,16 +47,14 @@ char editorReadKey() {
             if (seq[1] >= '0' && seq[1] <= '9') {
                 if (read(STDIN_FILENO, &seq[2], 1) != 1) return '\x1b';
                 if (seq[2] == '~') {
-                    switch (seq[1]) {
-                        case '3': return 1004; // Custom code for DELETE
-                    }
+                    if (seq[1] == '3') return DEL_KEY;
                 }
             } else {
                 switch (seq[1]) {
-                    case 'A': return 1000; // UP
-                    case 'B': return 1001; // DOWN
-                    case 'C': return 1002; // RIGHT
-                    case 'D': return 1003; // LEFT
+                    case 'A': return ARROW_UP;
+                    case 'B': return ARROW_DOWN;
+                    case 'C': return ARROW_RIGHT;
+                    case 'D': return ARROW_LEFT;
                 }
             }
         }
@@ -86,7 +82,6 @@ char *editor_rows_to_string(EditorConfig *E, int *buflen) {
     int total_len = 0;
     int j;
 
-    // calculate final string length
     for (j = 0; j < E->numrows; j++) {
         total_len += E->rows[j].size + 1;
     }
@@ -95,7 +90,6 @@ char *editor_rows_to_string(EditorConfig *E, int *buflen) {
     char *buf = malloc(total_len);
     char *p = buf;
 
-    // insert \n at the end of each row
     for (j = 0; j < E->numrows; j++) {
         memcpy(p, E->rows[j].chars, E->rows[j].size);
         p += E->rows[j].size;
@@ -110,7 +104,6 @@ void editor_save(EditorConfig *E, int *c) {
     if (E->filename == NULL) {
         E->filename = editor_prompt(E, "Save as: ");
         if (E->filename == NULL) {
-            // User pressed ESC
             return;
         }
     }
@@ -118,7 +111,6 @@ void editor_save(EditorConfig *E, int *c) {
     int len;
     char *buf = editor_rows_to_string(E, &len);
 
-    // Create a path for the temporary file
     char tmp_name[256];
     snprintf(tmp_name, sizeof(tmp_name), "%s.tmp", E->filename);
 
@@ -126,11 +118,10 @@ void editor_save(EditorConfig *E, int *c) {
     if (fp != NULL) {
         if (fwrite(buf, 1, len, fp) == len) {
             fclose(fp);
-            // Move tmp file to original filename
+
             rename(tmp_name, E->filename);
             free(buf);
             
-            // Optional: Print a status message
             printf("\x1b[%d;1H\x1b[K%d bytes written to disk", E->height, len);
             fflush(stdout);
             sleep(1); 
@@ -140,7 +131,7 @@ void editor_save(EditorConfig *E, int *c) {
     }
 
     free(buf);
-    // Error handling
+
     printf("\x1b[%d;1H\x1b[KSave failed! I/O Error.", E->height);
     fflush(stdout);
     sleep(2);

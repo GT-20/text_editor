@@ -1,80 +1,73 @@
 #include "shared.h"
 
 void input(EditorConfig *E, int *c, bool *running){
-    if (*c == CTRL_KEY('q')){
-        //NOTE:
-        // delete_empty_rows(E);
-        *running = false;
+    int key = *c;
+
+    if (key == CTRL_KEY('q')){
+        if (E->unsaved) {
+            char *choice = editor_prompt(E, "Quit without saving? (y/N): ");
+            if (choice != NULL && (choice[0] == 'y' || choice[0] == 'Y')) {
+                *running = false;
+            }
+            if (choice) free(choice);
+        } else *running = false;
+        return; 
     }
-    else if (*c == CTRL_KEY('s')){
-        delete_empty_rows(E);
+    else if (key == CTRL_KEY('s')){
+        // delete_empty_rows(E);
+        E->unsaved = false;
         editor_save(E, c);
         redraw_screen(E);
     }
 
-    else if (*c == '\r' || *c == '\n'){
+    switch (key) {
+        case ARROW_UP:
+            if (E->cy > 0) {
+                E->cy--;
+                if (E->cx > E->rows[E->cy].size) E->cx = E->rows[E->cy].size;
+            }
+            return;
+        case ARROW_DOWN:
+            if (E->cy < E->numrows - 1) {
+                E->cy++;
+                if (E->cx > E->rows[E->cy].size) E->cx = E->rows[E->cy].size;
+            }
+            return;
+        case ARROW_RIGHT:
+            if (E->cx < E->rows[E->cy].size) {
+                E->cx++;
+            } else if (E->cy < E->numrows - 1) {
+                E->cy++;
+                E->cx = 0;
+            }
+            return;
+        case ARROW_LEFT:
+            if (E->cx > 0) {
+                E->cx--;
+            } else if (E->cy > 0) {
+                E->cy--;
+                E->cx = E->rows[E->cy].size;
+            }
+            return;
+        case DEL_KEY:
+            erow *current_row = &E->rows[E->cy];
+
+            if (E->cx < E->rows[E->cy].size && E->cx < current_row->size && current_row->size > 0) {
+                memmove(&current_row->chars[E->cx], &current_row->chars[E->cx + 1], current_row->size - E->cx + 1);
+                current_row->size--;
+            }
+            E->unsaved = true;
+            return;
+    }
+    
+    if (*c == '\r' || *c == '\n'){
         if (E->cx == E->rows[E->cy].size) {
             add_row(E);
         }
         else {
             break_into_newline(E);
         }
-    }
-
-    else if (*c == '\x1b') {
-        char seq[3];
-        if (read(STDIN_FILENO, &seq[0], 1) && read(STDIN_FILENO, &seq[1], 1)) {
-            if (seq[0] == '[') {
-                if (seq[1] >= '0' && seq[1] <= '9') {
-                    // It's a sequence like [3~ (Delete) or [5~ (PageUp)
-                    if (read(STDIN_FILENO, &seq[2], 1) && seq[2] == '~') {
-                        if (seq[1] == '3') { // delete
-                            erow *current_row = &E->rows[E->cy];
-
-                            if (E->cx < E->rows[E->cy].size && E->cx < current_row->size && current_row->size > 0) {
-                                memmove(&current_row->chars[E->cx], &current_row->chars[E->cx + 1], current_row->size - E->cx + 1);
-                                current_row->size--;
-                            }
-                        }
-                    }
-                }
-
-                switch (seq[1]) {
-                    case 'A': // UP
-                        if (E->cy > 0) {
-                            E->cy--; 
-                            if (E->cx > E->rows[E->cy].size) E->cx = E->rows[E->cy].size;
-                        }
-                        break;
-                    case 'B': // DOWN
-                        if (E->cy < E->numrows - 1) {
-                            E->cy++;
-                            if (E->cx > E->rows[E->cy].size) E->cx = E->rows[E->cy].size;
-                        }
-                        break;
-
-                    case 'C': // RIGHT
-                        if (E->cx < E->rows[E->cy].size) {
-                            E->cx++;
-                        } 
-                        else if (E->cy < E->numrows - 1) {
-                            E->cy++;
-                            E->cx = 0;
-                        }
-                        break;
-
-                    case 'D': // LEFT
-                        if (E->cx > 0) {
-                            E->cx--;
-                        } 
-                        else if (E->cy > 0) {
-                            E->cy--;
-                            E->cx = E->rows[E->cy].size;
-                        }
-                        break;
-                }
-            }
-        }
+        E->unsaved = true;
     }
 
     else if (*c == BACKSPACE || *c== '\b'){
@@ -85,10 +78,27 @@ void input(EditorConfig *E, int *c, bool *running){
             current_row->size--;
             E->cx--;
         }
-        else if (E->cx == 0 && E->cy > 0){
+        else if (E->cx == 0 && E->cy > 0) {
+            erow *prev_row = &E->rows[E->cy - 1];
+            erow *current_row = &E->rows[E->cy];
+
+            int target_cx = prev_row->size;
+
+            int new_capacity = prev_row->size + current_row->size + 1;
+            prev_row->chars = realloc(prev_row->chars, new_capacity);
+            prev_row->capacity = new_capacity;
+
+            memcpy(&prev_row->chars[prev_row->size], current_row->chars, current_row->size);
+            prev_row->size += current_row->size;
+            prev_row->chars[prev_row->size] = '\0';
+
+            int row_to_delete = E->cy;
             E->cy--;
-            E->cx = E->rows[E->cy].size;
+            E->cx = target_cx;
+
+            delete_row(E, row_to_delete);
         }
+        E->unsaved = true;
     }
 
     else{
@@ -100,17 +110,13 @@ void input(EditorConfig *E, int *c, bool *running){
         }
 
         memmove(&current_row->chars[E->cx + 1], &current_row->chars[E->cx], current_row->size - E->cx + 1);
-        current_row->chars[E->cx] = *c;
-        if (write(STDOUT_FILENO, c, 1)){
-            E->cx++;
-            current_row->size++;
-            current_row->chars[current_row->size] = '\0';
-        }
+        current_row->chars[E->cx] = key;
+        E->cx++;
+        current_row->size++;
+        current_row->chars[current_row->size] = '\0';
+        E->unsaved = true;
     } 
-    move_cursor(E);
-    redraw_screen(E);
 }
-
 
 char *editor_prompt(EditorConfig *E, char *prompt) {
     size_t bufsize = 128;
@@ -119,18 +125,17 @@ char *editor_prompt(EditorConfig *E, char *prompt) {
     buf[0] = '\0';
 
     while (1) {
-        // Use the very bottom line for the prompt
         printf("\x1b[%d;1H\x1b[K%s%s", E->height, prompt, buf);
         fflush(stdout);
 
-        int ch = editorReadKey(); // Call the new read function!
+        int ch = editorReadKey();
 
         if (ch == BACKSPACE || ch == 0x7f || ch == CTRL_KEY('h')) {
             if (buflen != 0) buf[--buflen] = '\0';
-        } else if (ch == '\x1b') { // ESC to cancel
+        } else if (ch == '\x1b') {
             free(buf);
             return NULL;
-        } else if (ch == '\r') { // ENTER to confirm
+        } else if (ch == '\r') {
             if (buflen != 0) return buf;
         } else if (isprint(ch) && ch < 128) {
             if (buflen + 1 >= bufsize) {

@@ -13,27 +13,26 @@ void delete_row(EditorConfig *E, int at) {
 
     free(E->rows[at].chars);
 
-    E->numrows--;
-
-    if (E->numrows == 0) {
-        E->rows = realloc(E->rows, 0);
-        perror("Number of rows reached 0, not possible, thus bug in program.");
-        return;
+    if (at < E->numrows - 1) {
+        memmove(&E->rows[at], &E->rows[at + 1], sizeof(erow) * (E->numrows - at - 1));
     }
 
-    erow *tmp = realloc(E->rows, sizeof(erow) * E->numrows);
-    if (tmp) E->rows = tmp;
+    E->numrows--;
+    
+    if (E->numrows > 0) {
+        erow *tmp = realloc(E->rows, sizeof(erow) * E->numrows);
+        if (tmp) E->rows = tmp;
+    }
 }
 
 void delete_empty_rows(EditorConfig *E){
-    // delete all the empty rows starting from the end of the file
     while (E->numrows > 1 && E->rows[E->numrows - 1].size == 0) {
         delete_row(E, E->numrows - 1);
     }
 }
 
 void editor_scroll(EditorConfig *E) {
-    int draw_height = E->height - 2; // drawable area
+    int draw_height = E->height - 2;
     int draw_width = E->width;
 
     if (E->cy < E->start_row) {
@@ -154,7 +153,7 @@ void break_into_newline(EditorConfig *E){
     fflush(stdout);
 }
 
-void editor_open(EditorConfig *E, char *filename) {
+void open_file(EditorConfig *E, char *filename) {
     free(E->filename);
     E->filename = strdup(filename);
 
@@ -201,25 +200,27 @@ int main(int argc, char **argv){
     E.rows[0].chars[0] = '\0';
     E.start_row = 0;
     E.start_col = 0;
+    E.unsaved = false;
 
     ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws);
     E.width = ws.ws_col;
     E.height = ws.ws_row;
 
     if (argc >= 2) {
-        editor_open(&E, argv[1]);
+        open_file(&E, argv[1]);
     }
 
     redraw_screen(&E);
 
     int c = '\0';
     while (running) {
-        redraw_screen(&E); // Redraw at the start of every loop
+        redraw_screen(&E);
         int c = editorReadKey();
         input(&E, &c, &running);
     }
 
     clear_screen();
+
     #ifdef DEBUG_EXISTS
         editor_config_print(&E);
     #endif
