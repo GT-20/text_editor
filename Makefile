@@ -5,7 +5,7 @@ CFLAGS = -Os -flto -ffunction-sections -fdata-sections \
 # LDFLAGS = -lncurses -ltinfo
 
 TARGET = a
-SRC = main.c core.c input.c
+SRC = main.c core.c input.c selection.c
 DEBUG = debug.c
 
 all: $(TARGET)

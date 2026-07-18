@@ -31,7 +31,7 @@ void clear_screen(void) {
     write(STDOUT_FILENO, "\x1b[2J\x1b[H", 7);
 }
 
-int editorReadKey() {
+int editor_readKey() {
     int nread;
     char c;
     while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
@@ -39,16 +39,26 @@ int editorReadKey() {
     }
 
     if (c == '\x1b') {
-        char seq[3];
+        char seq[8];
         if (read(STDIN_FILENO, &seq[0], 1) != 1) return '\x1b';
         if (read(STDIN_FILENO, &seq[1], 1) != 1) return '\x1b';
 
         if (seq[0] == '[') {
             if (seq[1] >= '0' && seq[1] <= '9') {
                 if (read(STDIN_FILENO, &seq[2], 1) != 1) return '\x1b';
-                if (seq[2] == '~') {
-                    if (seq[1] == '3') return DEL_KEY;
+
+                if (seq[1] == '1' && seq[2] == ';') {
+                    if (read(STDIN_FILENO, &seq[3], 1) != 1) return '\x1b';
+                    if (read(STDIN_FILENO, &seq[4], 1) != 1) return '\x1b';
+                    switch (seq[4]) {
+                        case 'A': return SHFT_UP;
+                        case 'B': return SHFT_DOWN;
+                        case 'C': return SHFT_RIGHT;
+                        case 'D': return SHFT_LEFT;
+                    }
                 }
+
+                if (seq[2] == '~' && seq[1] == '3') return DEL_KEY;
             } else {
                 switch (seq[1]) {
                     case 'A': return ARROW_UP;

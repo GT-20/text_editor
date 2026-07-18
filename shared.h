@@ -1,4 +1,4 @@
-#ifndef SHARED
+#ifndef SHARED_H
 
 #include <stddef.h>
 #include <stdio.h>
@@ -25,6 +25,8 @@ typedef struct {
     int cx, cy;
     int width, height;
     int start_row, start_col;
+    int sel_anchor_x, sel_anchor_y;
+    bool selection_active;
     int numrows;
     erow *rows;
     char *filename;
@@ -36,6 +38,10 @@ enum editorKey {
     ARROW_RIGHT,
     ARROW_UP,
     ARROW_DOWN,
+    SHFT_UP,
+    SHFT_DOWN,
+    SHFT_LEFT,
+    SHFT_RIGHT,
     DEL_KEY
 };
 
@@ -43,16 +49,22 @@ enum editorKey {
     void editor_config_print(EditorConfig *E);
 #endif
 
+// core.c
 void enableRawMode();
 void disableRawMode();
 void clear_screen(void);
 void editor_free(EditorConfig *E);
 void editor_save(EditorConfig *E, int *c);
-int editorReadKey();
+int editor_readKey();
 
+//input.c
 void input(EditorConfig *E, int *c, bool *running);
 char *editor_prompt(EditorConfig *E, char *prompt);
 
+//selection.c
+bool is_selected(EditorConfig *E, int x, int y);
+
+//main.c
 void delete_empty_rows(EditorConfig *E);
 void delete_row(EditorConfig *E, int at);
 void add_row(EditorConfig *E);
@@ -60,4 +72,4 @@ void break_into_newline(EditorConfig *E);
 void redraw_screen(EditorConfig *E);
 void move_cursor(EditorConfig *E);
 
-#endif // !SHARED
+#endif // !SHARED_H

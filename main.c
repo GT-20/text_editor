@@ -59,16 +59,25 @@ void redraw_screen(EditorConfig *E) {
     int draw_height = E->height - 2;
 
     for (int i = 0; i < draw_height; i++) {
-        int file_idx = i + E->start_row;
+        int file_row_idx = i + E->start_row;
         write(STDOUT_FILENO, "\x1b[K", 3);
 
-        if (file_idx < E->numrows) {
-            int len = E->rows[file_idx].size;
+        if (file_row_idx < E->numrows) {
+            int len = E->rows[file_row_idx].size;
             
             if (len > E->start_col) {
                 int visible_len = len - E->start_col;
                 if (visible_len > E->width) visible_len = E->width;
-                write(STDOUT_FILENO, &E->rows[file_idx].chars[E->start_col], visible_len);
+                for (int j = 0; j < visible_len; j++) {
+                    int file_col = j + E->start_col;
+                    if (is_selected(E, file_col, file_row_idx)) {
+                        write(STDOUT_FILENO, "\x1b[7m", 4); // Highlight
+                        write(STDOUT_FILENO, &E->rows[file_row_idx].chars[file_col], 1);
+                        write(STDOUT_FILENO, "\x1b[27m", 5); // Reset
+                    } else {
+                        write(STDOUT_FILENO, &E->rows[file_row_idx].chars[file_col], 1);
+                    }
+                }
             }
         } 
         write(STDOUT_FILENO, "\r\n", 2);
@@ -215,7 +224,7 @@ int main(int argc, char **argv){
     int c = '\0';
     while (running) {
         redraw_screen(&E);
-        int c = editorReadKey();
+        int c = editor_readKey();
         input(&E, &c, &running);
     }
 

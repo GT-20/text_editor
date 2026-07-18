@@ -1,5 +1,7 @@
 #include "shared.h"
 
+void move_logic(EditorConfig *E, int key);
+
 void input(EditorConfig *E, int *c, bool *running){
     int key = *c;
 
@@ -21,34 +23,25 @@ void input(EditorConfig *E, int *c, bool *running){
     }
 
     switch (key) {
-        case ARROW_UP:
-            if (E->cy > 0) {
-                E->cy--;
-                if (E->cx > E->rows[E->cy].size) E->cx = E->rows[E->cy].size;
-            }
-            break;
-        case ARROW_DOWN:
-            if (E->cy < E->numrows - 1) {
-                E->cy++;
-                if (E->cx > E->rows[E->cy].size) E->cx = E->rows[E->cy].size;
-            }
-            break;
-        case ARROW_RIGHT:
-            if (E->cx < E->rows[E->cy].size) {
-                E->cx++;
-            } else if (E->cy < E->numrows - 1) {
-                E->cy++;
-                E->cx = 0;
-            }
-            break;
-        case ARROW_LEFT:
-            if (E->cx > 0) {
-                E->cx--;
-            } else if (E->cy > 0) {
-                E->cy--;
-                E->cx = E->rows[E->cy].size;
-            }
-            break;
+    case SHFT_UP:
+    case SHFT_DOWN:
+    case SHFT_LEFT:
+    case SHFT_RIGHT:
+        if (!E->selection_active) {
+            E->selection_active = true;
+            E->sel_anchor_x = E->cx;
+            E->sel_anchor_y = E->cy;
+        }
+        move_logic(E, key);
+        break;
+
+    case ARROW_UP:
+    case ARROW_DOWN:
+    case ARROW_LEFT:
+    case ARROW_RIGHT:
+        E->selection_active = false;
+        move_logic(E, key);
+        break;
         case DEL_KEY:
             if (E->cy < E->numrows) {
                 erow *current_row = &E->rows[E->cy];
@@ -108,6 +101,35 @@ void input(EditorConfig *E, int *c, bool *running){
     }
 }
 
+void move_logic(EditorConfig *E, int key) {
+    switch (key) {
+        case ARROW_UP:
+        case SHFT_UP:
+            if (E->cy > 0) {
+                E->cy--;
+                if (E->cx > E->rows[E->cy].size) E->cx = E->rows[E->cy].size;
+            }
+            break;
+        case ARROW_DOWN:
+        case SHFT_DOWN:
+            if (E->cy < E->numrows - 1) {
+                E->cy++;
+                if (E->cx > E->rows[E->cy].size) E->cx = E->rows[E->cy].size;
+            }
+            break;
+        case ARROW_LEFT:
+        case SHFT_LEFT:
+            if (E->cx > 0) E->cx--;
+            else if (E->cy > 0) { E->cy--; E->cx = E->rows[E->cy].size; }
+            break;
+        case ARROW_RIGHT:
+        case SHFT_RIGHT:
+            if (E->cx < E->rows[E->cy].size) E->cx++;
+            else if (E->cy < E->numrows - 1) { E->cy++; E->cx = 0; }
+            break;
+    }
+}
+
 char *editor_prompt(EditorConfig *E, char *prompt) {
     size_t bufsize = 128;
     char *buf = malloc(bufsize);
@@ -118,7 +140,7 @@ char *editor_prompt(EditorConfig *E, char *prompt) {
         printf("\x1b[%d;1H\x1b[K%s%s", E->height, prompt, buf);
         fflush(stdout);
 
-        int ch = editorReadKey();
+        int ch = editor_readKey();
 
         if (ch == BACKSPACE || ch == 0x7f || ch == CTRL_KEY('h')) {
             if (buflen != 0) buf[--buflen] = '\0';
