@@ -81,7 +81,7 @@ void redraw_screen(EditorConfig *E) {
 
 void move_cursor(EditorConfig *E) {
     char buf[32];
-    // screen_y = Logical Row - Scroll Offset + 1 (for 1-indexing)
+
     int screen_y = (E->cy - E->start_row) + 1;
     int screen_x = (E->cx - E->start_col) + 1;
 

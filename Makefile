@@ -16,6 +16,9 @@ $(TARGET): $(SRC)
 debug:
 	$(CC) -O0 -DDEBUG_EXISTS -o $(TARGET) $(SRC) $(DEBUG) $(LDFLAGS)
 
+memory:
+	valgrind --leak-check=full ./$(TARGET)
+
 clean:
 	rm -f $(TARGET)
 
