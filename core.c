@@ -8,6 +8,7 @@ static struct termios orig_termios;
 void disableRawMode() {
     fflush(stdout);
     tcsetattr(STDIN_FILENO,TCSAFLUSH,&orig_termios);
+        write(STDOUT_FILENO, "\x1b[?2004l", 8);
 }
 
 void enableRawMode() {
@@ -25,6 +26,7 @@ void enableRawMode() {
     raw.c_cc[VTIME] = 1;
 
     if (tcsetattr(STDIN_FILENO,TCSAFLUSH,&raw) < 0) exit(1);
+    write(STDOUT_FILENO, "\x1b[?2004h", 8);
 }
 
 void clear_screen(void) {
@@ -44,6 +46,12 @@ int editor_readKey() {
         if (read(STDIN_FILENO, &seq[1], 1) != 1) return '\x1b';
 
         if (seq[0] == '[') {
+            if (seq[1] == '2' && read(STDIN_FILENO, &seq[2], 2) == 2) {
+                 if (seq[2] == '0' && seq[3] == '0' && read(STDIN_FILENO, &seq[4], 1) == 1) {
+                     if (seq[4] == '~') return BRACKETED_PASTE;
+                 }
+            }
+
             if (seq[1] >= '0' && seq[1] <= '9') {
                 if (read(STDIN_FILENO, &seq[2], 1) != 1) return '\x1b';
 

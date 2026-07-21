@@ -42,7 +42,8 @@ enum editorKey {
     SHFT_DOWN,
     SHFT_LEFT,
     SHFT_RIGHT,
-    DEL_KEY
+    BRACKETED_PASTE,
+    DEL_KEY,
 };
 
 #ifdef DEBUG_EXISTS
@@ -70,6 +71,6 @@ void delete_row(EditorConfig *E, int at);
 void add_row(EditorConfig *E);
 void break_into_newline(EditorConfig *E);
 void redraw_screen(EditorConfig *E);
-void move_cursor(EditorConfig *E);
+void update_cursor(EditorConfig *E);
 
 #endif // !SHARED_H

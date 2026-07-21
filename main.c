@@ -6,7 +6,7 @@
 
 bool running = true;
 
-void move_cursor(EditorConfig *E);
+void update_cursor(EditorConfig *E);
 
 void delete_row(EditorConfig *E, int at) {
     if (at < 0 || at >= E->numrows) return;
@@ -68,12 +68,13 @@ void redraw_screen(EditorConfig *E) {
             if (len > E->start_col) {
                 int visible_len = len - E->start_col;
                 if (visible_len > E->width) visible_len = E->width;
+
                 for (int j = 0; j < visible_len; j++) {
                     int file_col = j + E->start_col;
                     if (is_selected(E, file_col, file_row_idx)) {
-                        write(STDOUT_FILENO, "\x1b[7m", 4); // Highlight
+                        write(STDOUT_FILENO, "\x1b[7m", 4);
                         write(STDOUT_FILENO, &E->rows[file_row_idx].chars[file_col], 1);
-                        write(STDOUT_FILENO, "\x1b[27m", 5); // Reset
+                        write(STDOUT_FILENO, "\x1b[27m", 5);
                     } else {
                         write(STDOUT_FILENO, &E->rows[file_row_idx].chars[file_col], 1);
                     }
@@ -83,12 +84,12 @@ void redraw_screen(EditorConfig *E) {
         write(STDOUT_FILENO, "\r\n", 2);
     }
     
-    move_cursor(E);
+    update_cursor(E);
     write(STDOUT_FILENO, "\x1b[?25h", 6);
     fflush(stdout);
 }
 
-void move_cursor(EditorConfig *E) {
+void update_cursor(EditorConfig *E) {
     char buf[32];
 
     int screen_y = (E->cy - E->start_row) + 1;
@@ -223,9 +224,9 @@ int main(int argc, char **argv){
 
     int c = '\0';
     while (running) {
-        redraw_screen(&E);
         int c = editor_readKey();
         input(&E, &c, &running);
+        redraw_screen(&E);
     }
 
     clear_screen();

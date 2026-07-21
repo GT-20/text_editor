@@ -1,6 +1,7 @@
 #include "shared.h"
 
 void move_logic(EditorConfig *E, int key);
+void handle_paste(EditorConfig *E);
 
 void input(EditorConfig *E, int *c, bool *running){
     int key = *c;
@@ -23,25 +24,31 @@ void input(EditorConfig *E, int *c, bool *running){
     }
 
     switch (key) {
-    case SHFT_UP:
-    case SHFT_DOWN:
-    case SHFT_LEFT:
-    case SHFT_RIGHT:
-        if (!E->selection_active) {
-            E->selection_active = true;
-            E->sel_anchor_x = E->cx;
-            E->sel_anchor_y = E->cy;
-        }
-        move_logic(E, key);
-        break;
+        case SHFT_UP:
+        case SHFT_DOWN:
+        case SHFT_LEFT:
+        case SHFT_RIGHT:
+            if (!E->selection_active) {
+                E->selection_active = true;
+                E->sel_anchor_x = E->cx;
+                E->sel_anchor_y = E->cy;
+            }
+            move_logic(E, key);
+            break;
 
-    case ARROW_UP:
-    case ARROW_DOWN:
-    case ARROW_LEFT:
-    case ARROW_RIGHT:
-        E->selection_active = false;
-        move_logic(E, key);
-        break;
+        case ARROW_UP:
+        case ARROW_DOWN:
+        case ARROW_LEFT:
+        case ARROW_RIGHT:
+            E->selection_active = false;
+            move_logic(E, key);
+            break;
+
+        case BRACKETED_PASTE:
+            handle_paste(E);
+            E->unsaved = true;
+            break;
+
         case DEL_KEY:
             if (E->cy < E->numrows) {
                 erow *current_row = &E->rows[E->cy];
@@ -69,7 +76,6 @@ void input(EditorConfig *E, int *c, bool *running){
                 memcpy(&prev_row->chars[prev_row->size], curr_row->chars, curr_row->size);
                 prev_row->size += curr_row->size;
                 prev_row->chars[prev_row->size] = '\0';
-
                 E->cx = target_cx;
                 int row_to_del = E->cy;
                 E->cy--;
@@ -158,4 +164,54 @@ char *editor_prompt(EditorConfig *E, char *prompt) {
             buf[buflen] = '\0';
         }
     }
+}
+
+void editorInsertString(EditorConfig *E, char *s, int len) {
+    for (int i = 0; i < len; i++) {
+        if (s[i] == '\r' || s[i] == '\n') {
+            break_into_newline(E);
+        } else {
+            // Direct insertion into the row
+            erow *row = &E->rows[E->cy];
+            if (row->size + 1 >= row->capacity) {
+                row->capacity = row->size + 2; // Temporary small growth
+                row->chars = realloc(row->chars, row->capacity);
+            }
+            memmove(&row->chars[E->cx + 1], &row->chars[E->cx], row->size - E->cx + 1);
+            row->chars[E->cx] = s[i];
+            E->cx++;
+            row->size++;
+        }
+    }
+}
+
+void handle_paste(EditorConfig *E) {
+    size_t bufsize = 12000;
+    char *buf = malloc(bufsize);
+    size_t buflen = 0;
+
+    while (1) {
+        char c;
+        if (read(STDIN_FILENO, &c, 1) != 1) break;
+
+        // Check for end of paste sequence: \x1b [ 2 0 1 ~
+        if (c == '\x1b') {
+            char seq[6];
+            if (read(STDIN_FILENO, &seq, 5) == 5) {
+                if (seq[0] == '[' && seq[1] == '2' && seq[2] == '0' && seq[3] == '1' && seq[4] == '~') {
+                    break; // End of paste
+                }
+            }
+        }
+
+        // Add character to buffer
+        buf[buflen++] = c;
+        if (buflen >= bufsize - 1) {
+            bufsize *= 2;
+            buf = realloc(buf, bufsize);
+        }
+    }
+
+    editorInsertString(E, buf, buflen);
+    free(buf);
 }
