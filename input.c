@@ -6,6 +6,12 @@ void handle_paste(EditorConfig *E);
 void input(EditorConfig *E, int *c, bool *running){
     int key = *c;
 
+    bool trigger_sel_del= (key == BACKSPACE || key == '\b' || key == DEL_KEY || isprint(key) || key == '\r');
+
+    if (E->selection_active && trigger_sel_del) {
+        editor_delete_selection(E);
+    }
+
     if (key == CTRL_KEY('q')){
         if (E->unsaved) {
             char *choice = editor_prompt(E, "Quit without saving? (y/n): ");

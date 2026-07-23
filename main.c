@@ -1,5 +1,4 @@
 #include "shared.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -7,6 +6,7 @@
 bool running = true;
 
 void update_cursor(EditorConfig *E);
+int get_gutter_width(EditorConfig *E);
 
 void delete_row(EditorConfig *E, int at) {
     if (at < 0 || at >= E->numrows) return;
@@ -33,7 +33,8 @@ void delete_empty_rows(EditorConfig *E){
 
 void editor_scroll(EditorConfig *E) {
     int draw_height = E->height - 2;
-    int draw_width = E->width;
+    int gutter_w = get_gutter_width(E);
+    int draw_width = E->width - gutter_w;
 
     if (E->cy < E->start_row) {
         E->start_row = E->cy;
@@ -57,26 +58,36 @@ void redraw_screen(EditorConfig *E) {
     write(STDOUT_FILENO, "\x1b[H", 3);
 
     int draw_height = E->height - 2;
+    int gutter_w = get_gutter_width(E);
+    int draw_width = E->width - gutter_w;
 
     for (int i = 0; i < draw_height; i++) {
         int file_row_idx = i + E->start_row;
         write(STDOUT_FILENO, "\x1b[K", 3);
 
         if (file_row_idx < E->numrows) {
+            char gutter[16];
+
+            int g_len = snprintf(gutter, sizeof(gutter), "%*d ", gutter_w - 1, file_row_idx + 1);
+            write(STDOUT_FILENO, "\x1b[90m", 5); //-gray 
+            write(STDOUT_FILENO, gutter, g_len);
+            write(STDOUT_FILENO, "\x1b[0m", 4); //-reset
+
             int len = E->rows[file_row_idx].size;
             
-            if (len > E->start_col) {
-                int visible_len = len - E->start_col;
-                if (visible_len > E->width) visible_len = E->width;
+            erow *row = &E->rows[file_row_idx];
+            if (row->size > E->start_col) {
+                int visible_len = row->size - E->start_col;
+                if (visible_len > draw_width) visible_len = draw_width;
 
                 for (int j = 0; j < visible_len; j++) {
                     int file_col = j + E->start_col;
                     if (is_selected(E, file_col, file_row_idx)) {
                         write(STDOUT_FILENO, "\x1b[7m", 4);
-                        write(STDOUT_FILENO, &E->rows[file_row_idx].chars[file_col], 1);
+                        write(STDOUT_FILENO, &row->chars[file_col], 1);
                         write(STDOUT_FILENO, "\x1b[27m", 5);
                     } else {
-                        write(STDOUT_FILENO, &E->rows[file_row_idx].chars[file_col], 1);
+                        write(STDOUT_FILENO, &row->chars[file_col], 1);
                     }
                 }
             }
@@ -85,15 +96,16 @@ void redraw_screen(EditorConfig *E) {
     }
     
     update_cursor(E);
-    write(STDOUT_FILENO, "\x1b[?25h", 6);
+    write(STDOUT_FILENO, "\x1b[?25h", 6); //-show cursor
     fflush(stdout);
 }
 
 void update_cursor(EditorConfig *E) {
     char buf[32];
+    int gutter_w = get_gutter_width(E);
 
     int screen_y = (E->cy - E->start_row) + 1;
-    int screen_x = (E->cx - E->start_col) + 1;
+    int screen_x = (E->cx - E->start_col) + gutter_w + 1;
 
     int len = snprintf(buf, sizeof(buf), "\x1b[%d;%dH", screen_y, screen_x);
     write(STDOUT_FILENO, buf, len);
@@ -192,6 +204,17 @@ void open_file(EditorConfig *E, char *filename) {
 
     free(line);
     fclose(fp);
+}
+
+int get_gutter_width(EditorConfig *E) {
+    int lines = E->numrows;
+    int width = 0;
+    while (lines > 0) {
+        lines /= 10;
+        width++;
+    }
+    if (width < 2) width = 1;
+    return width + 1;
 }
 
 int main(int argc, char **argv){

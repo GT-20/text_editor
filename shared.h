@@ -64,6 +64,7 @@ char *editor_prompt(EditorConfig *E, char *prompt);
 
 //selection.c
 bool is_selected(EditorConfig *E, int x, int y);
+void editor_delete_selection(EditorConfig *E);
 
 //main.c
 void delete_empty_rows(EditorConfig *E);
