@@ -13,6 +13,7 @@ void editor_config_print(EditorConfig *E) {
     fprintf(stderr, "Height: %d\r\n", E->height);
     fprintf(stderr, "Starting row: %d\r\n", E->start_row);
     fprintf(stderr, "relative cursor position: %d\r\n", E->cy-E->start_row);
+    fprintf(stderr, "filename: %s\r\n", E->filename);
     for (int i = 0; i < E->numrows; i++) {
         erow_print(&E->rows[i], i);
     }

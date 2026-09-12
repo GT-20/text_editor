@@ -1,4 +1,5 @@
 #include "shared.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <termios.h>
 #include <unistd.h>
@@ -150,7 +151,10 @@ void editor_save(EditorConfig *E, int *c) {
 
     free(buf);
 
+    E->filename = NULL;
+
     printf("\x1b[%d;1H\x1b[KSave failed! I/O Error.", E->height);
     fflush(stdout);
     sleep(2);
+    printf("\x1b[%d;1H\x1b[K", E->height);
 }

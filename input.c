@@ -1,4 +1,5 @@
 #include "shared.h"
+#include <stdio.h>
 
 void move_logic(EditorConfig *E, int key);
 void handle_paste(EditorConfig *E);
@@ -89,6 +90,20 @@ void input(EditorConfig *E, int *c, bool *running){
                 E->unsaved = true;
             }
             break;
+        case TAB:
+            erow *current_row = &E->rows[E->cy];
+            int pad = TAB_SIZE - (E->cx % TAB_SIZE);
+            while (current_row->size + pad >= current_row->capacity) {
+                current_row->capacity *= 2;
+                current_row->chars = realloc(current_row->chars, current_row->capacity);
+            }
+            memmove(&current_row->chars[E->cx + pad], &current_row->chars[E->cx], current_row->size - E->cx + 1);
+            for (int i = 0; i < pad; i++) current_row->chars[E->cx + i] = ' ';
+            E->cx += pad;
+            current_row->size += pad;
+            current_row->chars[current_row->size] = '\0';
+            E->unsaved = true;
+            break;
         case '\r':
         case '\n':
             if (E->cx == E->rows[E->cy].size) add_row(E);
@@ -160,7 +175,11 @@ char *editor_prompt(EditorConfig *E, char *prompt) {
             free(buf);
             return NULL;
         } else if (ch == '\r') {
-            if (buflen != 0) return buf;
+            if (buflen != 0){
+                printf("\x1b[%d;1H\x1b[K%s", E->height, "                             ");
+                fflush(stdout);
+                return buf; 
+            }
         } else if (isprint(ch) && ch < 128) {
             if (buflen + 1 >= bufsize) {
                 bufsize *= 2;

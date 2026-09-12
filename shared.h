@@ -14,6 +14,8 @@
 
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define BACKSPACE 0x7f
+#define TAB 0x09
+#define TAB_SIZE 4
 
 typedef struct {
     char *chars;
