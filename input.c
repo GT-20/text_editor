@@ -1,5 +1,6 @@
 #include "shared.h"
 #include <stdio.h>
+#include <stdlib.h>
 
 void move_logic(EditorConfig *E, int key);
 void handle_paste(EditorConfig *E);
@@ -7,10 +8,11 @@ void handle_paste(EditorConfig *E);
 void input(EditorConfig *E, int *c, bool *running){
     int key = *c;
 
-    bool trigger_sel_del= (key == BACKSPACE || key == '\b' || DEL_KEY || isprint(key) || key == '\r');
+    bool trigger_sel_del = (key == BACKSPACE || key == '\b' || key == DEL_KEY || key == '\r' || isprint(key));
 
     if (E->selection_active && trigger_sel_del) {
         editor_delete_selection(E);
+        return;
     }
 
     if (key == CTRL_KEY('q')){

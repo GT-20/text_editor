@@ -22,8 +22,8 @@ bool is_selected(EditorConfig *E, int x, int y) {
 }
 
 void get_selection_range(EditorConfig *E, int *sx, int *sy, int *ex, int *ey) {
-    long long anchor = (long long)E->sel_anchor_y * 1000000 + E->sel_anchor_x;
-    long long cursor = (long long)E->cy * 1000000 + E->cx;
+    long long anchor = (long long)E->sel_anchor_y * 100000 + E->sel_anchor_x;
+    long long cursor = (long long)E->cy * 100000 + E->cx;
 
     if (anchor <= cursor) {
         *sx = E->sel_anchor_x; *sy = E->sel_anchor_y;
