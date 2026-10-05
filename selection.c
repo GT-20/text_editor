@@ -72,3 +72,56 @@ void editor_delete_selection(EditorConfig *E) {
     E->selection_active = false;
     E->unsaved = true;
 }
+
+char *editor_get_selection_text(EditorConfig *E, int *len_out) {
+    if (!E->selection_active) {
+        if (len_out) *len_out = 0;
+        return NULL;
+    }
+
+    int sx, sy, ex, ey;
+    get_selection_range(E, &sx, &sy, &ex, &ey);
+
+    if (sy == ey) {
+        if (ex <= sx) {
+            if (len_out) *len_out = 0;
+            return NULL;
+        }
+        int len = ex - sx;
+        char *buf = malloc(len + 1);
+        memcpy(buf, &E->rows[sy].chars[sx], len);
+        buf[len] = '\0';
+        if (len_out) *len_out = len;
+        return buf;
+    }
+
+    int total = 0;
+    erow *start_row = &E->rows[sy];
+    erow *end_row = &E->rows[ey];
+    total += (start_row->size - sx) + 1;
+    for (int i = sy + 1; i < ey; i++) {
+        total += E->rows[i].size + 1;
+    }
+    total += ex;
+
+    char *buf = malloc(total + 1);
+    char *p = buf;
+    memcpy(p, &start_row->chars[sx], start_row->size - sx);
+    p += (start_row->size - sx);
+    *p++ = '\n';
+
+    for (int i = sy + 1; i < ey; i++) {
+        memcpy(p, E->rows[i].chars, E->rows[i].size);
+        p += E->rows[i].size;
+        *p++ = '\n';
+    }
+
+    if (ex > 0) {
+        memcpy(p, end_row->chars, ex);
+        p += ex;
+    }
+    *p = '\0';
+
+    if (len_out) *len_out = p - buf;
+    return buf;
+}

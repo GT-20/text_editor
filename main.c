@@ -1,11 +1,30 @@
 #include "shared.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 bool running = true;
 
-void update_cursor(EditorConfig *E);
+struct abuf {
+    char *b;
+    int len;
+};
+
+#define ABUF_INIT {NULL, 0}
+
+static void ab_append(struct abuf *ab, const char *s, int len) {
+    char *new = realloc(ab->b, ab->len + len);
+    if (new == NULL) return;
+    memcpy(new + ab->len, s, len);
+    ab->b = new;
+    ab->len += len;
+}
+
+static void ab_free(struct abuf *ab) {
+    free(ab->b);
+}
+
 int get_gutter_width(EditorConfig *E);
 
 void delete_row(EditorConfig *E, int at) {
@@ -54,8 +73,9 @@ void editor_scroll(EditorConfig *E) {
 void redraw_screen(EditorConfig *E) {
     editor_scroll(E);
 
-    write(STDOUT_FILENO, "\x1b[?25l", 6);
-    write(STDOUT_FILENO, "\x1b[H", 3);
+    struct abuf ab = ABUF_INIT;
+    ab_append(&ab, "\x1b[?25l", 6);
+    ab_append(&ab, "\x1b[H", 3);
 
     int draw_height = E->height - 2;
     int gutter_w = get_gutter_width(E);
@@ -63,18 +83,16 @@ void redraw_screen(EditorConfig *E) {
 
     for (int i = 0; i < draw_height; i++) {
         int file_row_idx = i + E->start_row;
-        write(STDOUT_FILENO, "\x1b[K", 3);
+        ab_append(&ab, "\x1b[K", 3);
 
         if (file_row_idx < E->numrows) {
             char gutter[16];
 
             int g_len = snprintf(gutter, sizeof(gutter), "%*d ", gutter_w - 1, file_row_idx + 1);
-            write(STDOUT_FILENO, "\x1b[90m", 5); //-gray 
-            write(STDOUT_FILENO, gutter, g_len);
-            write(STDOUT_FILENO, "\x1b[0m", 4); //-reset
+            ab_append(&ab, "\x1b[90m", 5); //-gray 
+            ab_append(&ab, gutter, g_len);
+            ab_append(&ab, "\x1b[0m", 4); //-reset
 
-            int len = E->rows[file_row_idx].size;
-            
             erow *row = &E->rows[file_row_idx];
             if (row->size > E->start_col) {
                 int visible_len = row->size - E->start_col;
@@ -83,32 +101,30 @@ void redraw_screen(EditorConfig *E) {
                 for (int j = 0; j < visible_len; j++) {
                     int file_col = j + E->start_col;
                     if (is_selected(E, file_col, file_row_idx)) {
-                        write(STDOUT_FILENO, "\x1b[7m", 4);
-                        write(STDOUT_FILENO, &row->chars[file_col], 1);
-                        write(STDOUT_FILENO, "\x1b[27m", 5);
+                        ab_append(&ab, "\x1b[7m", 4);
+                        ab_append(&ab, &row->chars[file_col], 1);
+                        ab_append(&ab, "\x1b[27m", 5);
                     } else {
-                        write(STDOUT_FILENO, &row->chars[file_col], 1);
+                        ab_append(&ab, &row->chars[file_col], 1);
                     }
                 }
             }
-        } 
-        write(STDOUT_FILENO, "\r\n", 2);
+        }
+        ab_append(&ab, "\r\n", 2);
     }
-    
-    update_cursor(E);
-    write(STDOUT_FILENO, "\x1b[?25h", 6); //-show cursor
-    fflush(stdout);
-}
 
-void update_cursor(EditorConfig *E) {
     char buf[32];
-    int gutter_w = get_gutter_width(E);
-
     int screen_y = (E->cy - E->start_row) + 1;
     int screen_x = (E->cx - E->start_col) + gutter_w + 1;
+    if (screen_y < 1) screen_y = 1;
+    if (screen_x < 1) screen_x = 1;
+    int clen = snprintf(buf, sizeof(buf), "\x1b[%d;%dH", screen_y, screen_x);
+    ab_append(&ab, buf, clen);
 
-    int len = snprintf(buf, sizeof(buf), "\x1b[%d;%dH", screen_y, screen_x);
-    write(STDOUT_FILENO, buf, len);
+    ab_append(&ab, "\x1b[?25h", 6); //-show cursor
+    write(STDOUT_FILENO, ab.b, ab.len);
+    ab_free(&ab);
+    fflush(stdout);
 }
 
 void add_row(EditorConfig *E) {
@@ -131,12 +147,9 @@ void add_row(EditorConfig *E) {
     
     new_row->chars[0] = '\0';
 
-    write(STDOUT_FILENO, "\n\r", 2);
-
     E->numrows++;
     E->cy++;
     E->cx = 0;
-    fflush(stdout);
 }
 
 void insert_row(EditorConfig *E, int at, const char *s, size_t len) {
@@ -172,7 +185,6 @@ void break_into_newline(EditorConfig *E){
 
     E->cy++;
     E->cx = 0;
-    fflush(stdout);
 }
 
 void open_file(EditorConfig *E, char *filename) {

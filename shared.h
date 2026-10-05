@@ -44,8 +44,13 @@ enum editorKey {
     SHFT_DOWN,
     SHFT_LEFT,
     SHFT_RIGHT,
+    CTRL_ARROW_UP,
+    CTRL_ARROW_DOWN,
+    CTRL_ARROW_LEFT,
+    CTRL_ARROW_RIGHT,
     BRACKETED_PASTE,
     DEL_KEY,
+    CTRL_BACKSPACE,
 };
 
 #ifdef DEBUG_EXISTS
@@ -59,6 +64,7 @@ void clear_screen(void);
 void editor_free(EditorConfig *E);
 void editor_save(EditorConfig *E, int *c);
 int editor_readKey();
+void editor_copy_selection(EditorConfig *E);
 
 //input.c
 void input(EditorConfig *E, int *c, bool *running);
@@ -67,6 +73,7 @@ char *editor_prompt(EditorConfig *E, char *prompt);
 //selection.c
 bool is_selected(EditorConfig *E, int x, int y);
 void editor_delete_selection(EditorConfig *E);
+char *editor_get_selection_text(EditorConfig *E, int *len_out);
 
 //main.c
 void delete_empty_rows(EditorConfig *E);
@@ -74,6 +81,5 @@ void delete_row(EditorConfig *E, int at);
 void add_row(EditorConfig *E);
 void break_into_newline(EditorConfig *E);
 void redraw_screen(EditorConfig *E);
-void update_cursor(EditorConfig *E);
 
 #endif // !SHARED_H

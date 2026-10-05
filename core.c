@@ -59,15 +59,30 @@ int editor_readKey() {
                 if (seq[1] == '1' && seq[2] == ';') {
                     if (read(STDIN_FILENO, &seq[3], 1) != 1) return '\x1b';
                     if (read(STDIN_FILENO, &seq[4], 1) != 1) return '\x1b';
-                    switch (seq[4]) {
-                        case 'A': return SHFT_UP;
-                        case 'B': return SHFT_DOWN;
-                        case 'C': return SHFT_RIGHT;
-                        case 'D': return SHFT_LEFT;
+                    if (seq[3] == '2') {
+                        switch (seq[4]) {
+                            case 'A': return SHFT_UP;
+                            case 'B': return SHFT_DOWN;
+                            case 'C': return SHFT_RIGHT;
+                            case 'D': return SHFT_LEFT;
+                        }
+                    }
+                    if (seq[3] == '5') {
+                        switch (seq[4]) {
+                            case 'A': return CTRL_ARROW_UP;
+                            case 'B': return CTRL_ARROW_DOWN;
+                            case 'C': return CTRL_ARROW_RIGHT;
+                            case 'D': return CTRL_ARROW_LEFT;
+                        }
                     }
                 }
 
-                if (seq[2] == '~' && seq[1] == '3') return DEL_KEY;
+                if (seq[2] == '~') {
+                    if (seq[1] == '3') return DEL_KEY;
+                }
+                if (seq[1] == '3' && seq[2] == ';' && read(STDIN_FILENO, &seq[3], 1) == 1 && seq[3] == '5' && read(STDIN_FILENO, &seq[4], 1) == 1 && seq[4] == '~') {
+                    return DEL_KEY;
+                }
             } else {
                 switch (seq[1]) {
                     case 'A': return ARROW_UP;
@@ -157,4 +172,39 @@ void editor_save(EditorConfig *E, int *c) {
     fflush(stdout);
     sleep(2);
     printf("\x1b[%d;1H\x1b[K", E->height);
+}
+
+void editor_copy_selection(EditorConfig *E) {
+    int len = 0;
+    char *text = editor_get_selection_text(E, &len);
+    if (text == NULL || len == 0) {
+        if (text) free(text);
+        return;
+    }
+
+    FILE *f = popen("wl-copy 2>/dev/null", "w");
+    if (f) {
+        fwrite(text, 1, len, f);
+        pclose(f);
+        free(text);
+        return;
+    }
+
+    f = popen("xclip -selection clipboard 2>/dev/null", "w");
+    if (f) {
+        fwrite(text, 1, len, f);
+        pclose(f);
+        free(text);
+        return;
+    }
+
+    f = popen("xsel --clipboard --input 2>/dev/null", "w");
+    if (f) {
+        fwrite(text, 1, len, f);
+        pclose(f);
+        free(text);
+        return;
+    }
+
+    free(text);
 }

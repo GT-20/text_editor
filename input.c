@@ -7,7 +7,7 @@ void handle_paste(EditorConfig *E);
 void input(EditorConfig *E, int *c, bool *running){
     int key = *c;
 
-    bool trigger_sel_del= (key == BACKSPACE || key == '\b' || key == DEL_KEY || isprint(key) || key == '\r');
+    bool trigger_sel_del= (key == BACKSPACE || key == '\b' || DEL_KEY || isprint(key) || key == '\r');
 
     if (E->selection_active && trigger_sel_del) {
         editor_delete_selection(E);
@@ -30,6 +30,14 @@ void input(EditorConfig *E, int *c, bool *running){
         return;
     }
 
+    if (key == CTRL_KEY('c')){
+        if (E->selection_active) {
+            editor_copy_selection(E);
+            E->selection_active = false;
+        }
+        return;
+    }
+
     switch (key) {
         case SHFT_UP:
         case SHFT_DOWN:
@@ -47,6 +55,10 @@ void input(EditorConfig *E, int *c, bool *running){
         case ARROW_DOWN:
         case ARROW_LEFT:
         case ARROW_RIGHT:
+        case CTRL_ARROW_UP:
+        case CTRL_ARROW_DOWN:
+        case CTRL_ARROW_LEFT:
+        case CTRL_ARROW_RIGHT:
             E->selection_active = false;
             move_logic(E, key);
             break;
@@ -60,8 +72,22 @@ void input(EditorConfig *E, int *c, bool *running){
             if (E->cy < E->numrows) {
                 erow *current_row = &E->rows[E->cy];
                 if (E->cx < current_row->size) {
-                    memmove(&current_row->chars[E->cx], &current_row->chars[E->cx + 1], current_row->size - E->cx);
-                    current_row->size--;
+                    int x = E->cx;
+                    while (x < current_row->size && (current_row->chars[x] == ' ' || current_row->chars[x] == '\t')) x++;
+                    while (x < current_row->size && !(current_row->chars[x] == ' ' || current_row->chars[x] == '\t')) x++;
+                    int del_count = x - E->cx;
+                    if (del_count == 0) del_count = 1;
+                    memmove(&current_row->chars[E->cx], &current_row->chars[E->cx + del_count], current_row->size - (E->cx + del_count) + 1);
+                    current_row->size -= del_count;
+                    E->unsaved = true;
+                } else if (E->cy < E->numrows - 1) {
+                    erow *next_row = &E->rows[E->cy + 1];
+                    erow *curr_row = &E->rows[E->cy];
+                    curr_row->chars = realloc(curr_row->chars, curr_row->size + next_row->size + 1);
+                    memcpy(&curr_row->chars[curr_row->size], next_row->chars, next_row->size);
+                    curr_row->size += next_row->size;
+                    curr_row->chars[curr_row->size] = '\0';
+                    delete_row(E, E->cy + 1);
                     E->unsaved = true;
                 }
             }
@@ -70,10 +96,23 @@ void input(EditorConfig *E, int *c, bool *running){
         case '\b':
             if (E->cx > 0) {
                 erow *row = &E->rows[E->cy];
-                memmove(&row->chars[E->cx - 1], &row->chars[E->cx], row->size - E->cx + 1);
-                row->size--;
-                E->cx--;
-                E->unsaved = true;
+                if (key == CTRL_KEY('h')) {
+                    int start = E->cx - 1;
+                    int x = start;
+                    while (x > 0 && (row->chars[x] == ' ' || row->chars[x] == '\t') && (row->chars[x - 1] == ' ' || row->chars[x - 1] == '\t')) x--;
+                    while (x > 0 && (row->chars[x - 1] == ' ' || row->chars[x - 1] == '\t')) x--;
+                    while (x > 0 && !(row->chars[x - 1] == ' ' || row->chars[x - 1] == '\t')) x--;
+                    int del_count = start - x + 1;
+                    memmove(&row->chars[x], &row->chars[E->cx], row->size - E->cx + 1);
+                    row->size -= del_count;
+                    E->cx = x;
+                    E->unsaved = true;
+                } else {
+                    memmove(&row->chars[E->cx - 1], &row->chars[E->cx], row->size - E->cx + 1);
+                    row->size--;
+                    E->cx--;
+                    E->unsaved = true;
+                }
             } else if (E->cy > 0) {
                 erow *prev_row = &E->rows[E->cy - 1];
                 erow *curr_row = &E->rows[E->cy];
@@ -129,6 +168,36 @@ void input(EditorConfig *E, int *c, bool *running){
 }
 
 void move_logic(EditorConfig *E, int key) {
+    if (key == CTRL_ARROW_LEFT) {
+        if (E->cy < E->numrows && E->cx > 0) {
+            erow *row = &E->rows[E->cy];
+            int x = E->cx - 1;
+            while (x > 0 && !(row->chars[x] == ' ' || row->chars[x] == '\t') && (row->chars[x - 1] == ' ' || row->chars[x - 1] == '\t')) x--;
+            while (x > 0 && (row->chars[x - 1] == ' ' || row->chars[x - 1] == '\t')) x--;
+            while (x > 0 && !(row->chars[x - 1] == ' ' || row->chars[x - 1] == '\t')) x--;
+            E->cx = x;
+        } else if (E->cy > 0) {
+            E->cy--;
+            E->cx = E->rows[E->cy].size;
+        }
+        return;
+    }
+    if (key == CTRL_ARROW_RIGHT) {
+        if (E->cy < E->numrows) {
+            erow *row = &E->rows[E->cy];
+            if (E->cx < row->size) {
+                int x = E->cx;
+                while (x < row->size && (row->chars[x] == ' ' || row->chars[x] == '\t')) x++;
+                while (x < row->size && !(row->chars[x] == ' ' || row->chars[x] == '\t')) x++;
+                E->cx = x;
+            } else if (E->cy < E->numrows - 1) {
+                E->cy++;
+                E->cx = 0;
+            }
+        }
+        return;
+    }
+
     switch (key) {
         case ARROW_UP:
         case SHFT_UP:
