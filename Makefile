@@ -4,7 +4,7 @@ CFLAGS = -Os -flto -ffunction-sections -fdata-sections \
          -fno-stack-protector
 # LDFLAGS = -lncurses -ltinfo
 
-TARGET = a
+TARGET = typr
 SRC = main.c core.c input.c selection.c
 DEBUG = debug.c
 
