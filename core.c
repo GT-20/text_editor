@@ -1,4 +1,5 @@
 #include "shared.h"
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <termios.h>
@@ -6,18 +7,30 @@
 
 static struct termios orig_termios;
 
-void disableRawMode() {
+static void handle_fatal_signal(int sig) {
+    disableRawMode();
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+
+void disableRawMode(void) {
     fflush(stdout);
     tcsetattr(STDIN_FILENO,TCSAFLUSH,&orig_termios);
         write(STDOUT_FILENO, "\x1b[?2004l", 8);
 }
 
-void enableRawMode() {
+void enableRawMode(void) {
     struct termios raw;
 
     if (!isatty(STDIN_FILENO)) exit(1);
-    atexit(disableRawMode);
     if (tcgetattr(STDIN_FILENO,&orig_termios) == -1) exit(1);
+    atexit(disableRawMode);
+    signal(SIGINT, handle_fatal_signal);
+    signal(SIGTERM, handle_fatal_signal);
+    signal(SIGHUP, handle_fatal_signal);
+    signal(SIGQUIT, handle_fatal_signal);
+    signal(SIGSEGV, handle_fatal_signal);
+    signal(SIGABRT, handle_fatal_signal);
 
     raw = orig_termios;
     raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
@@ -34,7 +47,7 @@ void clear_screen(void) {
     write(STDOUT_FILENO, "\x1b[2J\x1b[H", 7);
 }
 
-int editor_readKey() {
+int editor_readKey(void) {
     int nread;
     char c;
     while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
@@ -98,6 +111,11 @@ int editor_readKey() {
 }
 
 void editor_free(EditorConfig *E) {
+    if (E->filename) {
+        free(E->filename);
+        E->filename = NULL;
+    }
+
     if (E->rows == NULL) return;
 
     for (int i = 0; i < E->numrows; i++) {
@@ -106,10 +124,10 @@ void editor_free(EditorConfig *E) {
         }
     }
 
-    if (E->filename) free(E->filename);
     free(E->rows);
     E->rows = NULL;
     E->numrows = 0;
+    E->rows_capacity = 0;
 }
 
 char *editor_rows_to_string(EditorConfig *E, int *buflen) {
@@ -117,61 +135,98 @@ char *editor_rows_to_string(EditorConfig *E, int *buflen) {
     int j;
 
     for (j = 0; j < E->numrows; j++) {
-        total_len += E->rows[j].size + 1;
+        total_len += E->rows[j].size;
+    }
+    if (E->numrows > 1) {
+        total_len += E->numrows - 1;
     }
     *buflen = total_len;
 
-    char *buf = malloc(total_len);
+    char *buf = malloc(total_len > 0 ? total_len : 1);
+    if (buf == NULL) return NULL;
+
     char *p = buf;
 
     for (j = 0; j < E->numrows; j++) {
+        if (j > 0) *p++ = '\n';
         memcpy(p, E->rows[j].chars, E->rows[j].size);
         p += E->rows[j].size;
-        *p = '\n';
-        p++;
     }
 
     return buf;
 }
 
-void editor_save(EditorConfig *E, int *c) {
+bool editor_save(EditorConfig *E) {
+    bool prompted = false;
+
     if (E->filename == NULL) {
         E->filename = editor_prompt(E, "Save as: ");
         if (E->filename == NULL) {
-            return;
+            return false;
         }
+        prompted = true;
     }
 
-    int len;
+    int len = 0;
     char *buf = editor_rows_to_string(E, &len);
+    if (buf == NULL) {
+        if (prompted) {
+            free(E->filename);
+            E->filename = NULL;
+        }
+        printf("\x1b[%d;1H\x1b[KSave failed! Out of memory.", E->height);
+        fflush(stdout);
+        sleep(2);
+        printf("\x1b[%d;1H\x1b[K", E->height);
+        return false;
+    }
 
     char tmp_name[256];
-    snprintf(tmp_name, sizeof(tmp_name), "%s.tmp", E->filename);
+    int name_len = snprintf(tmp_name, sizeof(tmp_name), "%s.tmp", E->filename);
+    bool saved = false;
 
-    FILE *fp = fopen(tmp_name, "w");
-    if (fp != NULL) {
-        if (fwrite(buf, 1, len, fp) == len) {
-            fclose(fp);
+    if (name_len > 0 && (size_t)name_len < sizeof(tmp_name)) {
+        FILE *fp = fopen(tmp_name, "w");
+        if (fp != NULL) {
+            bool written = fwrite(buf, 1, (size_t)len, fp) == (size_t)len;
+            if (fclose(fp) != 0) written = false;
 
-            rename(tmp_name, E->filename);
-            free(buf);
-            
-            printf("\x1b[%d;1H\x1b[K%d bytes written to disk", E->height, len);
-            fflush(stdout);
-            sleep(1); 
-            return;
+            if (written && rename(tmp_name, E->filename) == 0) {
+                saved = true;
+            } else {
+                unlink(tmp_name);
+            }
         }
-        fclose(fp);
     }
 
     free(buf);
 
-    E->filename = NULL;
+    if (saved) {
+        printf("\x1b[%d;1H\x1b[K%d bytes written to disk", E->height, len);
+        fflush(stdout);
+        sleep(1);
+        return true;
+    }
+
+    if (prompted) {
+        free(E->filename);
+        E->filename = NULL;
+    }
 
     printf("\x1b[%d;1H\x1b[KSave failed! I/O Error.", E->height);
     fflush(stdout);
     sleep(2);
     printf("\x1b[%d;1H\x1b[K", E->height);
+    return false;
+}
+
+static bool copy_via_command(const char *cmd, const char *text, int len) {
+    FILE *f = popen(cmd, "w");
+    if (f == NULL) return false;
+
+    bool written = fwrite(text, 1, (size_t)len, f) == (size_t)len;
+    int status = pclose(f);
+    return written && status == 0;
 }
 
 void editor_copy_selection(EditorConfig *E) {
@@ -182,26 +237,9 @@ void editor_copy_selection(EditorConfig *E) {
         return;
     }
 
-    FILE *f = popen("wl-copy 2>/dev/null", "w");
-    if (f) {
-        fwrite(text, 1, len, f);
-        pclose(f);
-        free(text);
-        return;
-    }
-
-    f = popen("xclip -selection clipboard 2>/dev/null", "w");
-    if (f) {
-        fwrite(text, 1, len, f);
-        pclose(f);
-        free(text);
-        return;
-    }
-
-    f = popen("xsel --clipboard --input 2>/dev/null", "w");
-    if (f) {
-        fwrite(text, 1, len, f);
-        pclose(f);
+    if (copy_via_command("wl-copy 2>/dev/null", text, len) ||
+        copy_via_command("xclip -selection clipboard 2>/dev/null", text, len) ||
+        copy_via_command("xsel --clipboard --input 2>/dev/null", text, len)) {
         free(text);
         return;
     }

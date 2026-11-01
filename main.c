@@ -1,4 +1,5 @@
 #include "shared.h"
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -6,18 +7,33 @@
 
 bool running = true;
 
+static volatile sig_atomic_t winch_flag = 0;
+
+static void handle_winch(int sig) {
+    (void)sig;
+    winch_flag = 1;
+}
+
 struct abuf {
     char *b;
     int len;
+    int cap;
 };
 
-#define ABUF_INIT {NULL, 0}
+#define ABUF_INIT {NULL, 0, 0}
 
 static void ab_append(struct abuf *ab, const char *s, int len) {
-    char *new = realloc(ab->b, ab->len + len);
-    if (new == NULL) return;
-    memcpy(new + ab->len, s, len);
-    ab->b = new;
+    if (ab->len + len > ab->cap) {
+        int new_cap = ab->cap > 0 ? ab->cap : 256;
+        while (new_cap < ab->len + len) new_cap *= 2;
+
+        char *new = realloc(ab->b, (size_t)new_cap);
+        if (new == NULL) return;
+        ab->b = new;
+        ab->cap = new_cap;
+    }
+
+    memcpy(ab->b + ab->len, s, (size_t)len);
     ab->len += len;
 }
 
@@ -26,6 +42,18 @@ static void ab_free(struct abuf *ab) {
 }
 
 int get_gutter_width(EditorConfig *E);
+
+static void update_window_size(EditorConfig *E) {
+    struct winsize ws;
+
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0 && ws.ws_row > 0) {
+        E->width = ws.ws_col;
+        E->height = ws.ws_row;
+    } else if (E->width <= 0 || E->height <= 0) {
+        E->width = 80;
+        E->height = 24;
+    }
+}
 
 void delete_row(EditorConfig *E, int at) {
     if (at < 0 || at >= E->numrows) return;
@@ -37,16 +65,15 @@ void delete_row(EditorConfig *E, int at) {
     }
 
     E->numrows--;
-    
-    if (E->numrows > 0) {
-        erow *tmp = realloc(E->rows, sizeof(erow) * E->numrows);
-        if (tmp) E->rows = tmp;
-    }
 }
 
-void delete_empty_rows(EditorConfig *E){
-    while (E->numrows > 1 && E->rows[E->numrows - 1].size == 0) {
-        delete_row(E, E->numrows - 1);
+void editor_shrink_rows(EditorConfig *E) {
+    if (E->numrows <= 0 || E->rows_capacity <= E->numrows) return;
+
+    erow *tmp = realloc(E->rows, sizeof(erow) * (size_t)E->numrows);
+    if (tmp != NULL) {
+        E->rows = tmp;
+        E->rows_capacity = E->numrows;
     }
 }
 
@@ -71,6 +98,7 @@ void editor_scroll(EditorConfig *E) {
 }
 
 void redraw_screen(EditorConfig *E) {
+    update_window_size(E);
     editor_scroll(E);
 
     struct abuf ab = ABUF_INIT;
@@ -127,27 +155,31 @@ void redraw_screen(EditorConfig *E) {
     fflush(stdout);
 }
 
-void add_row(EditorConfig *E) {
-    erow *tmp = realloc(E->rows, sizeof(erow) * (E->numrows + 1));
+static void ensure_row_capacity(EditorConfig *E, int needed) {
+    if (needed <= E->rows_capacity) return;
+
+    int new_cap = E->rows_capacity > 0 ? E->rows_capacity : 1;
+    while (new_cap < needed) new_cap *= 2;
+
+    erow *tmp = realloc(E->rows, sizeof(erow) * (size_t)new_cap);
     if (tmp == NULL) {
         fprintf(stderr, "Failed to allocate additional memory for new line.\n");
         exit(1);
     }
+
     E->rows = tmp;
+    E->rows_capacity = new_cap;
+}
 
-    erow *new_row = &E->rows[E->numrows]; 
-    new_row->size = 0;
-    new_row->capacity = 128;
-    new_row->chars = calloc(1, new_row->capacity);
-    
-    if (new_row->chars == NULL) {
-        fprintf(stderr, "Out of memory!\n");
-        exit(1);
+void add_row(EditorConfig *E) {
+    if (E->numrows == 0) {
+        insert_row(E, 0, "", 0);
+        E->cy = 0;
+        E->cx = 0;
+        return;
     }
-    
-    new_row->chars[0] = '\0';
 
-    E->numrows++;
+    insert_row(E, E->cy + 1, "", 0);
     E->cy++;
     E->cx = 0;
 }
@@ -155,17 +187,23 @@ void add_row(EditorConfig *E) {
 void insert_row(EditorConfig *E, int at, const char *s, size_t len) {
     if (at < 0 || at > E->numrows) return;
 
-    E->rows = realloc(E->rows, sizeof(erow) * (E->numrows + 1));
+    ensure_row_capacity(E, E->numrows + 1);
+
+    char *chars = malloc(len + 1);
+    if (chars == NULL) {
+        fprintf(stderr, "Out of memory!\n");
+        exit(1);
+    }
+    memcpy(chars, s, len);
+    chars[len] = '\0';
 
     if (at < E->numrows) {
         memmove(&E->rows[at + 1], &E->rows[at], sizeof(erow) * (E->numrows - at));
     }
 
-    E->rows[at].size = len;
-    E->rows[at].capacity = len + 1;
-    E->rows[at].chars = malloc(len + 1);
-    memcpy(E->rows[at].chars, s, len);
-    E->rows[at].chars[len] = '\0';
+    E->rows[at].size = (int)len;
+    E->rows[at].capacity = (int)len + 1;
+    E->rows[at].chars = chars;
 
     E->numrows++;
 }
@@ -174,7 +212,11 @@ void break_into_newline(EditorConfig *E){
     erow *current_row = &E->rows[E->cy];
 
     int right_len = current_row->size - E->cx;
-    char *right = malloc(right_len + 1);
+    char *right = malloc((size_t)right_len + 1);
+    if (right == NULL) {
+        fprintf(stderr, "Out of memory!\n");
+        return;
+    }
     memcpy(right, &current_row->chars[E->cx], right_len);
     right[right_len] = '\0';
 
@@ -202,6 +244,8 @@ void open_file(EditorConfig *E, char *filename) {
 
     if (E->numrows == 1 && E->rows[0].size == 0) {
         free(E->rows[0].chars);
+        E->rows[0].chars = NULL;
+        E->rows[0].capacity = 0;
         E->numrows = 0;
     }
 
@@ -216,6 +260,10 @@ void open_file(EditorConfig *E, char *filename) {
 
     free(line);
     fclose(fp);
+
+    if (E->numrows == 0) {
+        insert_row(E, 0, "", 0);
+    }
 }
 
 int get_gutter_width(EditorConfig *E) {
@@ -230,26 +278,33 @@ int get_gutter_width(EditorConfig *E) {
 }
 
 int main(int argc, char **argv){
-    struct winsize ws;
-
     enableRawMode();
     clear_screen();
 
     EditorConfig E = {0};
     
     E.numrows = 1;
-    E.rows = calloc(1, sizeof(erow) * E.numrows);
+    E.rows_capacity = 1;
+    E.rows = calloc(1, sizeof(erow));
+    if (E.rows == NULL) {
+        fprintf(stderr, "Out of memory!\n");
+        return 1;
+    }
     E.rows[0].capacity = 128;
     E.rows[0].size = 0;
     E.rows[0].chars = calloc(1, E.rows[0].capacity);
+    if (E.rows[0].chars == NULL) {
+        fprintf(stderr, "Out of memory!\n");
+        free(E.rows);
+        return 1;
+    }
     E.rows[0].chars[0] = '\0';
     E.start_row = 0;
     E.start_col = 0;
     E.unsaved = false;
 
-    ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws);
-    E.width = ws.ws_col;
-    E.height = ws.ws_row;
+    update_window_size(&E);
+    signal(SIGWINCH, handle_winch);
 
     if (argc >= 2) {
         open_file(&E, argv[1]);
@@ -257,8 +312,13 @@ int main(int argc, char **argv){
 
     redraw_screen(&E);
 
-    int c = '\0';
     while (running) {
+        if (winch_flag) {
+            winch_flag = 0;
+            update_window_size(&E);
+            redraw_screen(&E);
+        }
+
         int c = editor_readKey();
         input(&E, &c, &running);
         redraw_screen(&E);

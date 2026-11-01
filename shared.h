@@ -30,6 +30,7 @@ typedef struct {
     int sel_anchor_x, sel_anchor_y;
     bool selection_active;
     int numrows;
+    int rows_capacity;
     erow *rows;
     char *filename;
     bool unsaved;
@@ -58,12 +59,12 @@ enum editorKey {
 #endif
 
 // core.c
-void enableRawMode();
-void disableRawMode();
+void enableRawMode(void);
+void disableRawMode(void);
 void clear_screen(void);
 void editor_free(EditorConfig *E);
-void editor_save(EditorConfig *E, int *c);
-int editor_readKey();
+bool editor_save(EditorConfig *E);
+int editor_readKey(void);
 void editor_copy_selection(EditorConfig *E);
 
 //input.c
@@ -76,8 +77,9 @@ void editor_delete_selection(EditorConfig *E);
 char *editor_get_selection_text(EditorConfig *E, int *len_out);
 
 //main.c
-void delete_empty_rows(EditorConfig *E);
 void delete_row(EditorConfig *E, int at);
+void insert_row(EditorConfig *E, int at, const char *s, size_t len);
+void editor_shrink_rows(EditorConfig *E);
 void add_row(EditorConfig *E);
 void break_into_newline(EditorConfig *E);
 void redraw_screen(EditorConfig *E);

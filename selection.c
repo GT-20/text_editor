@@ -1,31 +1,23 @@
 #include "shared.h"
 
-/* here we are using big numbers cuz we are basically turning the 2d rows and columns
- * into a 1d string and we want to insure that the number of for example row 1, column
- * 2 is still bigger than row 0, column 2 and we dont need to worry abt the rest of the
- * numbers cuz they are just increasing multipliers of 100K. 100k cuz the max terminal
- * width is 1K (i think) and 100K is just an overkill safe "buffer"
- */
+static bool pos_less(int ay, int ax, int by, int bx) {
+    return ay < by || (ay == by && ax < bx);
+}
 
 bool is_selected(EditorConfig *E, int x, int y) {
     if (!E->selection_active) return false;
 
-    long long current = (long long)y * 100000 + x;
-    long long anchor = (long long)E->sel_anchor_y * 100000 + E->sel_anchor_x;
-    long long cursor = (long long)E->cy * 100000 + E->cx;
-
-    if (anchor < cursor) {
-        return (current >= anchor && current < cursor);
-    } else {
-        return (current >= cursor && current < anchor);
+    if (pos_less(E->sel_anchor_y, E->sel_anchor_x, E->cy, E->cx)) {
+        return !pos_less(y, x, E->sel_anchor_y, E->sel_anchor_x) &&
+               pos_less(y, x, E->cy, E->cx);
     }
+
+    return !pos_less(y, x, E->cy, E->cx) &&
+           pos_less(y, x, E->sel_anchor_y, E->sel_anchor_x);
 }
 
 void get_selection_range(EditorConfig *E, int *sx, int *sy, int *ex, int *ey) {
-    long long anchor = (long long)E->sel_anchor_y * 100000 + E->sel_anchor_x;
-    long long cursor = (long long)E->cy * 100000 + E->cx;
-
-    if (anchor <= cursor) {
+    if (!pos_less(E->cy, E->cx, E->sel_anchor_y, E->sel_anchor_x)) {
         *sx = E->sel_anchor_x; *sy = E->sel_anchor_y;
         *ex = E->cx;           *ey = E->cy;
     } else {
@@ -51,8 +43,15 @@ void editor_delete_selection(EditorConfig *E) {
         erow *end_row = &E->rows[ey];
 
         int end_part_len = end_row->size - ex;
+        int new_cap = sx + end_part_len + 1;
 
-        start_row->chars = realloc(start_row->chars, sx + end_part_len + 1);
+        char *new_chars = realloc(start_row->chars, (size_t)new_cap);
+        if (new_chars == NULL) {
+            fprintf(stderr, "Out of memory!\n");
+            return;
+        }
+        start_row->chars = new_chars;
+        start_row->capacity = new_cap;
         
         if (end_part_len > 0) {
             memcpy(&start_row->chars[sx], &end_row->chars[ex], end_part_len);
@@ -65,6 +64,8 @@ void editor_delete_selection(EditorConfig *E) {
         for (int i = 0; i < rows_to_remove; i++) {
             delete_row(E, sy + 1);
         }
+
+        editor_shrink_rows(E);
     }
 
     E->cx = sx;
